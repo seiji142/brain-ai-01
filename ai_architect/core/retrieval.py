@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 from .vectorstore import query_collection, COL_EPISODIC, COL_SEMANTIC
 from .memory import load_episode, load_semantic
-from .scoring import hybrid_score
+from .scoring import hybrid_score, compute_bm25_scores
 from .utils import date_range_filter_ok, new_id, append_jsonl, now_iso
 from .config import TRACES_DIR
 
@@ -21,9 +21,9 @@ def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Op
     where = _build_where(project, tags, date_from, date_to)
     if collection not in ("semantic", "episodic"):
         collection = "semantic"
-    res = query_collection(collection, query, n_results=top_k*2, where=where)
+    res = query_collection(collection, query, n_results=top_k*5, where=where)
 
-    results: List[Dict[str, Any]] = []
+    candidates: List[Dict[str, Any]] = []
     ids = res.get("ids", [])
     metas = res.get("metadatas", [])
     docs = res.get("documents", [])
@@ -56,19 +56,31 @@ def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Op
                 meta_tags = set(meta.get("tags","").split(",")) if meta.get("tags") else set()
                 if not any(t in meta_tags for t in tags):
                     continue
-        score = hybrid_score(item, dist)
+        text = item.get("statement") or item.get("summary") or item.get("title") or doc
+        candidates.append((item, dist, text, ts, meta))
+
+    # BM25 scoring sobre todos los candidatos
+    texts = [c[2] for c in candidates]
+    bm25_scores = compute_bm25_scores(query, texts) if texts else []
+
+    results: List[Dict[str, Any]] = []
+    for idx, (item, dist, text, ts, meta) in enumerate(candidates):
+        bm25 = bm25_scores[idx] if bm25_scores else 0.0
+        score = hybrid_score(item, dist, bm25)
         results.append({
-            "id": item_id,
+            "id": item.get("id", item.get("id")),
             "type": item.get("type", "episode" if collection=="episodic" else "semantic"),
-            "text": item.get("statement") or item.get("summary") or item.get("title") or doc,
+            "text": text,
             "project": item.get("project", meta.get("project","")),
             "timestamp": ts,
             "score": round(score, 4),
             "evidence": item.get("evidence", []) or [{"type":"episode", "id": eid} for eid in item.get("evidence_source_ids", [])],
             "collection": collection,
         })
-        if len(results) >= top_k:
-            break
+
+    # Ordenar por score descendente y limitar a top_k
+    results.sort(key=lambda x: x["score"], reverse=True)
+    results = results[:top_k]
 
     trace = {
         "trace_id": trace_id,
