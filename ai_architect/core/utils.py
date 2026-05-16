@@ -5,9 +5,9 @@ from typing import Any, Dict
 ISO = "%Y-%m-%dT%H:%M:%SZ"
 
 PII_PATTERNS = [
-    re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
-    re.compile(r"\b(?:\+?\d[\d\s\-]{7,}\d)\b"),
-    re.compile(r"\b\d{6,}\b"),
+    # re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+    # re.compile(r"\b(?:\+?\d[\d\s\-]{7,}\d)\b"),
+    # re.compile(r"\b\d{6,}\b"),
     re.compile(r"\bsk-[A-Za-z0-9]{16,}\b"),
     re.compile(r"\bBearer\s+[A-Za-z0-9\-\._~+/=]{20,}\b", re.IGNORECASE),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),

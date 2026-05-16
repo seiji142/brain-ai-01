@@ -16,6 +16,30 @@ from ai_architect.core.config import TEXT_DIR
 MCP_URL = "http://localhost:8000"
 
 
+def _parse_env(text: str, title: str) -> dict:
+    decisions = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" in stripped:
+            key, _, val = stripped.partition("=")
+            key = key.strip()
+            val = val.strip()
+            if key and val:
+                decisions.append({"text": f"Mi {key} es {val}"})
+    summary = f"Archivo de secretos: {title}\n" + "\n".join(
+        [d["text"] for d in decisions]
+    )
+    return {
+        "title": title,
+        "summary": summary,
+        "decisions": decisions,
+        "actions": [],
+        "risks": [],
+    }
+
+
 def _parse_md(text: str, title: str) -> dict:
     lines = text.split("\n")
     decisions = []
@@ -99,8 +123,10 @@ def main():
         sys.exit(1)
 
     ext = file_path.suffix.lower()
-    if ext not in (".md", ".txt", ".markdown", ".rst", ".text"):
-        print(f"[ERROR] Formato no soportado: {ext} (usar .md, .txt, .markdown)", file=sys.stderr)
+    name = file_path.name.lower()
+    is_env = name in (".env", ".env.secrets", ".secrets") or ext in (".env", ".secrets")
+    if ext not in (".md", ".txt", ".markdown", ".rst", ".text") and not is_env:
+        print(f"[ERROR] Formato no soportado: {ext} (usar .md, .txt, .markdown, .env)", file=sys.stderr)
         sys.exit(1)
 
     # 1) Leer archivo
@@ -109,16 +135,19 @@ def main():
 
     # 2) Parsear
     ep_title = args.title or file_path.stem
-    source_type = "markdown" if ext in (".md", ".markdown") else "text"
+    source_type = "markdown" if ext in (".md", ".markdown") else "env" if is_env else "text"
 
     if args.no_parse or ext not in (".md", ".markdown"):
-        parsed = {
-            "title": ep_title,
-            "summary": text[:2000],
-            "decisions": [],
-            "actions": [],
-            "risks": [],
-        }
+        if is_env:
+            parsed = _parse_env(text, ep_title)
+        else:
+            parsed = {
+                "title": ep_title,
+                "summary": text[:2000],
+                "decisions": [],
+                "actions": [],
+                "risks": [],
+            }
         md_tags = []
     else:
         parsed = _parse_md(text, ep_title)
@@ -130,6 +159,8 @@ def main():
         if md_tags:
             print(f"  [!] Tags detectados: {', '.join(md_tags[:10])}")
 
+    if is_env and parsed["decisions"]:
+        print(f"  [!] {len(parsed['decisions'])} variable(s) de entorno detectadas")
     print(f"[OK] Parseado: {parsed['title']}")
 
     # 3) Guardar copia

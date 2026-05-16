@@ -15,20 +15,9 @@ def _build_where(project: Optional[str], tags: Optional[List[str]], date_from: O
         return None
     return where
 
-def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Optional[List[str]] = None,
-             date_from: Optional[str] = None, date_to: Optional[str] = None, collection: str = "semantic") -> Dict[str, Any]:
-    trace_id = new_id("tr_")
-    where = _build_where(project, tags, date_from, date_to)
-    if collection not in ("semantic", "episodic"):
-        collection = "semantic"
-    res = query_collection(collection, query, n_results=top_k*5, where=where)
-
+def _load_candidates(collection: str, ids: List[str], metas: List[Dict], docs: List[str], dists: List[float],
+                     tags: Optional[List[str]], date_from: Optional[str], date_to: Optional[str]) -> List:
     candidates: List[Dict[str, Any]] = []
-    ids = res.get("ids", [])
-    metas = res.get("metadatas", [])
-    docs = res.get("documents", [])
-    dists = res.get("distances", [])
-
     for i in range(len(ids)):
         item_id = ids[i]
         meta = metas[i] if i < len(metas) else {}
@@ -58,6 +47,45 @@ def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Op
                     continue
         text = item.get("statement") or item.get("summary") or item.get("title") or doc
         candidates.append((item, dist, text, ts, meta))
+    return candidates
+
+
+def _deduplicate(candidates: List) -> List:
+    seen: set = set()
+    unique: List = []
+    for c in candidates:
+        item_id = c[0].get("id")
+        if item_id and item_id not in seen:
+            seen.add(item_id)
+            unique.append(c)
+    return unique
+
+
+def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Optional[List[str]] = None,
+             date_from: Optional[str] = None, date_to: Optional[str] = None, collection: str = "semantic") -> Dict[str, Any]:
+    trace_id = new_id("tr_")
+    where = _build_where(project, tags, date_from, date_to)
+    if collection not in ("semantic", "episodic"):
+        collection = "semantic"
+    res = query_collection(collection, query, n_results=top_k*5, where=where)
+
+    candidates: List[Dict[str, Any]] = _load_candidates(
+        collection, res.get("ids", []), res.get("metadatas", []),
+        res.get("documents", []), res.get("distances", []),
+        tags, date_from, date_to
+    )
+
+    # Fallback multi-proyecto: si hay filtro de project, buscar todos los items sin filtro
+    # para que BM25 + hybrid scoring encuentre matches en otros proyectos.
+    # Usamos n_results alto (1000) para cubrir toda la coleccion, compensando hash embeddings.
+    if project:
+        fallback_res = query_collection(collection, query, n_results=1000, where=None)
+        fallback_candidates = _load_candidates(
+            collection, fallback_res.get("ids", []), fallback_res.get("metadatas", []),
+            fallback_res.get("documents", []), fallback_res.get("distances", []),
+            tags, date_from, date_to
+        )
+        candidates = _deduplicate(candidates + fallback_candidates)
 
     # BM25 scoring sobre todos los candidatos
     texts = [c[2] for c in candidates]
