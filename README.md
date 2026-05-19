@@ -42,17 +42,38 @@ uvicorn ai_architect.core.mcp_server:app --reload --port 8000
 
 ## Usage (from any project)
 
+The canonical client lives at `clients/memoria.py`. Copy it to your project:
+
+```powershell
+copy brain-ai-01\clients\memoria.py tu-proyecto\memoria.py
+```
+
+### Core memory
+
 ```python
 from memoria import guardar, buscar, consolidar
 
-# Store
 guardar("proyecto-web", "Usar JWT con refresh tokens", tags=["auth"])
-
-# Retrieve
 results = buscar("autenticacion JWT", proyecto="proyecto-web")
-
-# Consolidate (episodic → semantic)
 consolidar("proyecto-web")
+```
+
+### Secrets with context awareness
+
+```python
+from memoria import guardar_secreto, leer_secreto, check_contexto, guardar_contexto
+
+# Save a secret — if the entity has no context yet, contexto_faltante=true
+r = guardar_secreto("TELEFONO_SHIZUMI", "099XXXXXX")
+if r["contexto_faltante"]:
+    # Agent should ask: "¿Quién es shizumi?"
+    guardar_contexto(r["nombre_base"], "mi hermana")
+
+# Next time the same entity appears, contexto_faltante=false → no question
+guardar_secreto("EMAIL_SHIZUMI", "shizumi@gmail.com")  # contexto_faltante: false
+
+# Read secrets
+leer_secreto("GMAIL")  # → {"ok": true, "valor": "..."}
 ```
 
 ## Environment

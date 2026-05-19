@@ -4,17 +4,18 @@ Pre-procesador: Imagen → Episodio en memoria brain-ai-01
 Uso:
   python scripts/img_ingest.py ruta/imagen.jpg
   python scripts/img_ingest.py ruta/imagen.jpg --project proyecto-web --statement "Esta persona es Seiji"
-  python scripts/img_ingest.py ruta/imagen.jpg --prompt "Describe la persona en la foto" --consolidate
-  python scripts/img_ingest.py ruta/imagen.jpg --detail facial  --consolidate   # enfocado en rostro
-  python scripts/img_ingest.py ruta/imagen.jpg --detail full     --consolidate   # descripcion completa
+  python scripts/img_ingest.py ruta/imagen.jpg --prompt "Describe la persona" --consolidate
+  python scripts/img_ingest.py ruta/imagen.jpg --detail facial --consolidate
+  python scripts/img_ingest.py ruta/imagen.jpg --detail full --consolidate
 """
-import argparse, httpx, json, os, base64, shutil, sys
+import argparse, base64, httpx, json, os, sys
 from pathlib import Path
 from datetime import datetime
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from ai_architect.core.config import IMAGES_DIR
+from scripts.ingest_utils import mcp_ingest, save_media, build_episode, MCP_URL
 
 OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions"
 VISION_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
@@ -47,7 +48,6 @@ DEFAULT_PROMPTS = {
         "Responde en español con formato de secciones."
     ),
 }
-MCP_URL = "http://localhost:8000"
 
 
 def _api_key() -> str:
@@ -101,10 +101,8 @@ def _describe_image(image_path: Path, prompt: str, detail_level: str) -> str:
     suffix = image_path.suffix.lower()
     mime = "image/png" if suffix in (".png",) else "image/jpeg"
 
-    # Primera pasada con el prompt elegido
     desc = _call_vision(prompt, b64, mime)
 
-    # Segunda pasada solo si es "full" — preguntar detalles faltantes
     if detail_level == "full":
         followup = _call_vision(
             "Basado en la misma imagen, responde SOLO esta pregunta: "
@@ -116,21 +114,6 @@ def _describe_image(image_path: Path, prompt: str, detail_level: str) -> str:
         desc = desc + "\n\n[DETALLES ADICIONALES]\n" + followup
 
     return desc
-
-
-def _save_media(src: Path, project: str) -> Path:
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    dest = IMAGES_DIR / f"{project}_{ts}_{src.name}"
-    shutil.copy2(src, dest)
-    return dest
-
-
-def _mcp_ingest(episode: dict) -> dict:
-    r = httpx.post(f"{MCP_URL}/ingest", json={"episode": episode}, timeout=30)
-    if r.status_code != 200:
-        print(f"Error MCP ({r.status_code}): {r.text[:300]}", file=sys.stderr)
-        sys.exit(1)
-    return r.json()
 
 
 def main():
@@ -149,42 +132,41 @@ def main():
 
     image_path = Path(args.image)
 
-    # 1) Validar
+    # Validar
     fmt = _validate_image(image_path)
     print(f"[OK] Imagen: {image_path.name} ({fmt})")
 
-    # 2) Seleccionar prompt y describir
+    # Seleccionar prompt y describir
     prompt = args.prompt or DEFAULT_PROMPTS[args.detail]
     detail_label = args.detail if not args.prompt else "personalizado"
     print(f"[...] Describiendo (modo: {detail_label}) via {VISION_MODEL}...")
     desc = _describe_image(image_path, prompt, args.detail)
     print(f"[OK] Descripcion ({len(desc)} chars): {desc[:120]}...")
 
-    # 3) Guardar copia en media/images/
-    media_path = _save_media(image_path, args.project)
+    # Guardar copia
+    media_path = save_media(image_path, args.project, IMAGES_DIR)
     rel_path = media_path.relative_to(media_path.parent.parent.parent)
     print(f"[OK] Copia: {rel_path}")
 
-    # 4) Construir episodio
-    ep_title = args.title or f"Imagen: {image_path.name}"
-    ep = {
-        "project": args.project,
-        "source_type": "image",
-        "author": args.author,
-        "title": ep_title,
-        "summary": desc,
-        "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "decisions": [{"text": args.statement}] if args.statement else [],
-        "evidence": [{"type": "image", "url_or_path": str(rel_path), "excerpt": desc[:300]}],
-        "tags": [t.strip() for t in args.tags.split(",") if t.strip()],
-    }
+    # Construir episodio
+    ep_titl = args.title or f"Imagen: {image_path.name}"
+    ep = build_episode(
+        project=args.project,
+        source_type="image",
+        author=args.author,
+        title=ep_titl,
+        summary=desc,
+        decisions=[{"text": args.statement}] if args.statement else None,
+        evidence=[{"type": "image", "url_or_path": str(rel_path), "excerpt": desc[:300]}],
+        tags=[t.strip() for t in args.tags.split(",") if t.strip()],
+    )
 
-    # 5) Ingestar via MCP
+    # Ingestar
     print("Ingestando en memoria...")
-    res = _mcp_ingest(ep)
+    res = mcp_ingest(ep)
     print(json.dumps(res, ensure_ascii=False, indent=2))
 
-    # 6) Consolidar opcional
+    # Consolidar opcional
     if args.consolidate:
         print("Consolidando...")
         cr = httpx.post(f"{MCP_URL}/consolidate", json={"project": args.project}, timeout=60)

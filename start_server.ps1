@@ -1,6 +1,6 @@
 # start_server.ps1
 # Inicia el servidor MCP central de memoria persistente (brain-ai-01)
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ProjectRoot = $PSScriptRoot
 $env:PYTHONPATH = $ProjectRoot
 $LogDir = Join-Path $ProjectRoot "logs"
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null

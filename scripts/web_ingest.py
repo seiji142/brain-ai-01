@@ -13,10 +13,10 @@ from bs4 import BeautifulSoup
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from ai_architect.core.config import PAGES_DIR
+from scripts.ingest_utils import mcp_ingest, save_media, build_episode, MCP_URL
 
 OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions"
 SUMMARY_MODEL = "meta-llama/llama-3.3-70b-versatile"
-MCP_URL = "http://localhost:8000"
 
 
 def _api_key() -> str:
@@ -29,7 +29,6 @@ def _api_key() -> str:
 
 
 def _fetch(url: str, selector: str | None) -> tuple[str, str, str, str, str]:
-    """Fetch URL, return (html, title, text, description, meta_tags_str)"""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "text/html,application/xhtml+xml",
@@ -44,27 +43,23 @@ def _fetch(url: str, selector: str | None) -> tuple[str, str, str, str, str]:
     if soup.title and soup.title.string:
         title = soup.title.string.strip()
 
-    # Extract description from meta tags
     description = ""
     for meta in soup.find_all("meta"):
         if meta.get("name", "").lower() == "description":
             description = meta.get("content", "")
             break
 
-    # Select specific element if selector provided
     if selector:
         selected = soup.select_one(selector)
         if selected:
             soup = selected
 
-    # Remove script, style, nav, footer, header
     for tag in soup.find_all(["script", "style", "nav", "footer", "header", "aside", "noscript"]):
         tag.decompose()
 
     text = soup.get_text(separator="\n", strip=True)
     text = re.sub(r"\n{3,}", "\n\n", text)
 
-    # Collect meta tags as string for tags
     meta_tags = []
     for kw in soup.find_all("meta"):
         if kw.get("name", "").lower() in ("keywords", "tag", "category"):
@@ -104,14 +99,6 @@ def _save_page(html: str, url: str, project: str) -> Path:
     return dest
 
 
-def _mcp_ingest(episode: dict) -> dict:
-    r = httpx.post(f"{MCP_URL}/ingest", json={"episode": episode}, timeout=30)
-    if r.status_code != 200:
-        print(f"  [ERROR] MCP ({r.status_code}): {r.text[:200]}", file=sys.stderr)
-        return None
-    return r.json()
-
-
 def main():
     p = argparse.ArgumentParser(description="Pre-procesador: URL/Web a episodio en memoria")
     p.add_argument("url", type=str, help="URL de la pagina web")
@@ -128,7 +115,7 @@ def main():
     if not url.startswith("http"):
         url = "https://" + url
 
-    # 1) Fetch
+    # Fetch
     print(f"[...] Descargando {url}...")
     try:
         html, page_title, text, description, meta_tags = _fetch(url, args.selector)
@@ -137,12 +124,12 @@ def main():
         sys.exit(1)
     print(f"[OK] Descargado: {len(html)} bytes, {len(text)} chars de texto util")
 
-    # 2) Guardar HTML
+    # Guardar HTML
     page_path = _save_page(html, url, args.project)
     rel_path = page_path.relative_to(page_path.parent.parent.parent)
     print(f"[OK] HTML guardado: {rel_path}")
 
-    # 3) Resumir opcionalmente
+    # Resumir opcional
     if args.summarize:
         print("[...] Resumiendo con IA...")
         summary = _summarize(text, url)
@@ -150,39 +137,31 @@ def main():
     else:
         summary = text[:2000]
 
-    # 4) Construir episodio
+    # Construir episodio
     ep_title = args.title or page_title or url
     all_tags = [t.strip() for t in args.tags.split(",") if t.strip()]
     if meta_tags:
         all_tags.extend([t.strip().lower() for t in meta_tags.split(",") if t.strip()])
 
-    ep = {
-        "project": args.project,
-        "source_type": "web",
-        "author": args.author,
-        "title": ep_title[:200],
-        "summary": summary,
-        "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "decisions": [],
-        "actions": [],
-        "risks": [],
-        "evidence": [{
-            "type": "url",
-            "url_or_path": url,
-            "excerpt": text[:300],
-        }],
-        "tags": all_tags,
-    }
+    ep = build_episode(
+        project=args.project,
+        source_type="web",
+        author=args.author,
+        title=ep_title[:200],
+        summary=summary,
+        evidence=[{"type": "url", "url_or_path": url, "excerpt": text[:300]}],
+        tags=all_tags,
+    )
 
-    # 5) Ingestar
+    # Ingestar
     print("[...] Ingestando en memoria...")
-    res = _mcp_ingest(ep)
+    res = mcp_ingest(ep)
     if res:
         print(json.dumps(res, ensure_ascii=False, indent=2))
     else:
         print("[ERROR] No se pudo ingestar")
 
-    # 6) Consolidar
+    # Consolidar
     if args.consolidate:
         print("[...] Consolidando...")
         cr = httpx.post(f"{MCP_URL}/consolidate", json={"project": args.project}, timeout=60)

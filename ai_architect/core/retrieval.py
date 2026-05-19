@@ -95,6 +95,9 @@ def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Op
     for idx, (item, dist, text, ts, meta) in enumerate(candidates):
         bm25 = bm25_scores[idx] if bm25_scores else 0.0
         score = hybrid_score(item, dist, bm25)
+        evidence_list = item.get("evidence", [])
+        file_path = evidence_list[0].get("url_or_path", "") if evidence_list else ""
+        source_type = item.get("source_type", meta.get("source_type", ""))
         results.append({
             "id": item.get("id", item.get("id")),
             "type": item.get("type", "episode" if collection=="episodic" else "semantic"),
@@ -102,7 +105,9 @@ def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Op
             "project": item.get("project", meta.get("project","")),
             "timestamp": ts,
             "score": round(score, 4),
-            "evidence": item.get("evidence", []) or [{"type":"episode", "id": eid} for eid in item.get("evidence_source_ids", [])],
+            "source_type": source_type,
+            "file_path": file_path,
+            "evidence": evidence_list or [{"type":"episode", "id": eid} for eid in item.get("evidence_source_ids", [])],
             "collection": collection,
         })
 
