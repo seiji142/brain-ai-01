@@ -10,4 +10,5 @@ Write-Host "=== Iniciando servidor MCP de brain-ai-01 ===" -ForegroundColor Cyan
 Write-Host "Puerto: 8000"
 Write-Host "Logs: $LogFile"
 
-uvicorn ai_architect.core.mcp_server:app --host 0.0.0.0 --port 8000 --reload 2>&1 | Tee-Object -FilePath $LogFile
+# NOTA: --reload eliminado para evitar problemas de recarga automática
+uvicorn ai_architect.core.mcp_server:app --host 0.0.0.0 --port 8000 2>&1 | Tee-Object -FilePath $LogFile

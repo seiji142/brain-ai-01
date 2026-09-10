@@ -1,79 +1,132 @@
 # brain-ai-01
 
-Persistent cognitive layer for AI agents. A central MCP server that accumulates, consolidates, and retrieves knowledge across multiple projects using episodic + semantic memory with hybrid scoring (BM25 + vector + recency + confidence).
+Servidor MCP para memoria persistente y sistema de provenance.
 
-## Architecture
+## Características
+
+- **Memoria Persistente**: Busca y guarda episodios de decisiones
+- **Provenance**: Control de procedencia para valores sensibles
+- **Auto-start**: Se inicia automáticamente con opencode
+- **Handles Opacos**: El modelo nunca ve valores secretos directamente
+
+## Arquitectura
 
 ```
-project-web ─┐
-sistema-ventas ─┤  HTTP ──▶ brain-ai-01 (MCP Server)
-juego-rpg ────┘           FastAPI + ChromaDB
-                                │
-                    ┌───────────┴───────────┐
-                    │                       │
-              Episodic Memory        Semantic Memory
-              (raw experiences)      (consolidated facts)
+opencode
+  ↓ (MCP)
+mcp_bridge.py
+  ↓ (HTTP)
+mcp_server.py (FastAPI)
+  ↓
+provenance/
+  ├── resolver.py (resuelve referencias)
+  ├── store.py (handles SQLite)
+  ├── gateway.py (valida acciones)
+  └── audit.py (logging)
 ```
 
 - **Central MCP server** at `localhost:8000`
 - Projects connect via HTTP, never copy system code
 - All data stays local; no cloud exposure
 
-## Quick Start
+## Instalación
 
+### Requisitos
+- Python 3.10+
+- uvicorn
+- fastapi
+- requests
+
+### Pasos
 ```powershell
-# Install dependencies
+cd brain-ai-01
 pip install -r requirements.txt
+```
 
-# Start server
-uvicorn ai_architect.core.mcp_server:app --reload --port 8000
+## Uso
 
-# Or using the launcher
+### Con opencode (automático)
+brain-ai-01 se inicia automáticamente cuando opencode hace la primera petición MCP.
+
+### Manualmente
+```powershell
+cd brain-ai-01
 .\start_server.ps1
 ```
 
-## Key Features
+## Tools MCP Disponibles
 
-- **Dual memory**: Episodic (raw events) → consolidated → Semantic (validated facts)
-- **Hybrid retrieval**: BM25 keyword scoring (70%) + vector similarity + recency + evidence + confidence
-- **PII redaction**: Automatic detection and redaction of API keys and tokens
-- **Multi-project**: Each project has isolated memory, but retrieval falls back across all projects
-- **Pre-processors**: Scripts for ingesting text, images (via vision API), PDFs, and web pages
+| Tool | Descripción | Cuándo usar |
+|------|-------------|-------------|
+| `memory_search` | Busca episodios en memoria | ANTES de responder preguntas sobre decisiones |
+| `memory_save` | Guarda episodio en memoria | DESPUÉS de tomar una decisión importante |
+| `memory_consolidate` | Consolida memoria | Periódicamente |
+| `resolver_referencia` | Resuelve una referencia | Cuando necesitas un valor seguro |
+| `describir_handle` | Devuelve metadatos de handle | Para verificar un handle |
+| `ejecutar_accion` | Ejecuta una acción | Para acciones con efectos |
 
-## Usage (from any project)
+### Ejemplo: Deploy con Handle
 
-The canonical client lives at `clients/memoria.py`. Copy it to your project:
+```
+1. Usuario: "Haz deploy a staging"
+2. Modelo: brain_ai_memory_search(query="GROQ_API_KEY")
+3. Modelo: resolver_referencia("GROQ_API_KEY", expected_kind="secret")
+4. Modelo: ejecutar_accion("deploy", {environment: "staging", api_key: {handle: "vh_abc123"}})
+5. Resultado: Deploy exitoso
+```
+
+## Auto-start del Servidor
+
+brain-ai-01 se inicia automáticamente cuando opencode hace la primera petición MCP.
+
+### Cómo funciona
+1. MCP bridge detecta conexión fallida (ConnectionError)
+2. Llama a `ensure_server()` en `mcp_bridge.py`
+3. `ensure_server()` ejecuta uvicorn con `CREATE_BREAKAWAY_FROM_JOB`
+4. Espera hasta 30 segundos a que el servidor esté healthy
+5. Reintenta la petición original
+
+### Archivos de log
+- `logs/bridge.log`: Intentos de auto-start y diagnósticos
+- `logs/uvicorn.log`: stdout/stderr de uvicorn
+
+## Troubleshooting
+
+### El servidor no inicia automáticamente
+```powershell
+# Ver logs de auto-start
+Get-Content logs/bridge.log -Tail 20
+
+# Ver logs de uvicorn
+Get-Content logs/uvicorn.log -Tail 50
+```
+
+### El servidor no responde
+```powershell
+# Verificar health
+Invoke-RestMethod http://localhost:8000/health
+
+# Reiniciar manualmente
+.\start_server.ps1
+```
+
+### Violaciones en el audit log
+```powershell
+# Ver violaciones
+python scripts/audit_report.py
+
+# Ver handles activos
+python -c "import sqlite3; print(sqlite3.connect('logs/handles.db').execute('SELECT COUNT(*) FROM handles').fetchone()[0])"
+```
+
+## Métricas
 
 ```powershell
-copy brain-ai-01\clients\memoria.py tu-proyecto\memoria.py
-```
+# Reporte semanal
+python scripts/metrics_report.py
 
-### Core memory
-
-```python
-from memoria import guardar, buscar, consolidar
-
-guardar("proyecto-web", "Usar JWT con refresh tokens", tags=["auth"])
-results = buscar("autenticacion JWT", proyecto="proyecto-web")
-consolidar("proyecto-web")
-```
-
-### Secrets with context awareness
-
-```python
-from memoria import guardar_secreto, leer_secreto, check_contexto, guardar_contexto
-
-# Save a secret — if the entity has no context yet, contexto_faltante=true
-r = guardar_secreto("TELEFONO_SHIZUMI", "099XXXXXX")
-if r["contexto_faltante"]:
-    # Agent should ask: "¿Quién es shizumi?"
-    guardar_contexto(r["nombre_base"], "mi hermana")
-
-# Next time the same entity appears, contexto_faltante=false → no question
-guardar_secreto("EMAIL_SHIZUMI", "shizumi@gmail.com")  # contexto_faltante: false
-
-# Read secrets
-leer_secreto("GMAIL")  # → {"ok": true, "valor": "..."}
+# Reporte de auditoría
+python scripts/audit_report.py
 ```
 
 ## Environment
@@ -82,6 +135,6 @@ Copy `.env.example` to `.env` and configure:
 - `EMBEDDING_PROVIDER`: `hash` (offline) or `openai`
 - Secrets go in `.env.secrets` (gitignored)
 
-## License
+## Licencia
 
-MIT
+Proyecto privado - No distribuir.

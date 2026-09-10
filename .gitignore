@@ -25,3 +25,7 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Scratch / temporal
+test.txt
+src/doc/IMP REFERENCIA/
