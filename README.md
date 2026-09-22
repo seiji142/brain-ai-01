@@ -65,6 +65,19 @@ cd brain-ai-01
 | `describir_handle` | Devuelve metadatos de handle | Para verificar un handle |
 | `ejecutar_accion` | Ejecuta una acción | Para acciones con efectos |
 
+### Filtrado por proyecto en `memory_search` (21/09/2026)
+
+Si pasas `project`, el filtro es **estricto por defecto**: solo se devuelven
+items de ese proyecto. Nunca verás memoria de otros proyectos mezclada.
+
+- `project` definido → solo ese proyecto (aislamiento).
+- `project` + `include_other_projects=true` → opt-in cross-project
+  (búsqueda explícita en todos los proyectos, rankeada por score).
+- Sin `project` → búsqueda global (todos los proyectos).
+
+Esto corrige la fuga donde `memory_search(project="X")` devolvía items
+de `eleccion-db` u otros proyectos (ver CHANGELOG 2026-09-21).
+
 ### Ejemplo: Deploy con Handle
 
 ```

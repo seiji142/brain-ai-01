@@ -242,6 +242,7 @@ class RetrieveReq(BaseModel):
     date_from: Optional[str] = None
     date_to: Optional[str] = None
     collection: str = "semantic"
+    include_other_projects: bool = False
 
 class ConsolidateReq(BaseModel):
     project: Optional[str] = None
@@ -275,7 +276,8 @@ def ingest(req: IngestReq):
 
 @app.post("/retrieve")
 def retrieve_ep(req: RetrieveReq):
-    res = retrieve(req.query, req.top_k, req.project, req.tags, req.date_from, req.date_to, req.collection)
+    res = retrieve(req.query, req.top_k, req.project, req.tags, req.date_from, req.date_to, req.collection,
+                   include_other_projects=req.include_other_projects)
     return res
 
 @app.post("/consolidate")

@@ -111,7 +111,7 @@ def guardar(proyecto, decision, evidencia="", source_type="chat", author="yo", t
     return r.json()
 
 
-def buscar(query, proyecto=None, top_k=5, coleccion=None, privado=True):
+def buscar(query, proyecto=None, top_k=5, coleccion=None, privado=True, incluir_otros=False):
     if coleccion is None:
         colecciones = ["episodic", "semantic"]
     else:
@@ -125,7 +125,8 @@ def buscar(query, proyecto=None, top_k=5, coleccion=None, privado=True):
             "query": query,
             "top_k": top_k * 2,
             "project": proyecto,
-            "collection": col
+            "collection": col,
+            "include_other_projects": bool(incluir_otros)
         })
         for item in r.json().get("results", []):
             if item["id"] not in seen_ids:

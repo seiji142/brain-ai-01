@@ -156,7 +156,7 @@ TOOLS = [
                 },
                 "project": {
                     "type": "string",
-                    "description": "Nombre del proyecto para filtrar resultados (ej: 'personalizar-comportamiento-01')"
+                    "description": "Nombre del proyecto para filtrar resultados. Por defecto el filtro es ESTRICTO: solo devuelve items de este proyecto (nunca de otros). Ej: 'personalizar-comportamiento-01'"
                 },
                 "top_k": {
                     "type": "integer",
@@ -168,6 +168,11 @@ TOOLS = [
                     "description": "Colección a buscar: 'semantic' (conocimiento consolidado) o 'episodic' (eventos crudos)",
                     "enum": ["semantic", "episodic"],
                     "default": "semantic"
+                },
+                "include_other_projects": {
+                    "type": "boolean",
+                    "description": "Si es true y se pasa project, incluye tambien resultados de OTROS proyectos (busqueda cross-project opt-in). Default: false (aislamiento estricto por proyecto).",
+                    "default": false
                 }
             },
             "required": ["query"]
@@ -426,7 +431,8 @@ def handle_memory_search(args):
         "query": args["query"],
         "top_k": args.get("top_k", 5),
         "project": args.get("project"),
-        "collection": args.get("collection", "semantic")
+        "collection": args.get("collection", "semantic"),
+        "include_other_projects": bool(args.get("include_other_projects", False))
     })
     
     if "results" in result:

@@ -62,7 +62,19 @@ def _deduplicate(candidates: List) -> List:
 
 
 def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Optional[List[str]] = None,
-             date_from: Optional[str] = None, date_to: Optional[str] = None, collection: str = "semantic") -> Dict[str, Any]:
+             date_from: Optional[str] = None, date_to: Optional[str] = None, collection: str = "semantic",
+             include_other_projects: bool = False) -> Dict[str, Any]:
+    """Busca en memoria con scoring hibrido (BM25 + vectorial + recencia).
+
+    Filtrado por proyecto:
+    - project=None: busqueda global (sin filtro).
+    - project definido: por defecto SOLO devuelve items de ese proyecto
+      (aislamiento estricto; fix de la fuga cross-project que hacia que
+      memory_search(project=X) devolviera otros proyectos via fallback).
+    - project + include_other_projects=True: comportamiento opt-in del
+      fallback multi-proyecto (busca tambien en otros proyectos y rankea
+      por hybrid_score).
+    """
     trace_id = new_id("tr_")
     where = _build_where(project, tags, date_from, date_to)
     if collection not in ("semantic", "episodic"):
@@ -75,10 +87,11 @@ def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Op
         tags, date_from, date_to
     )
 
-    # Fallback multi-proyecto: si hay filtro de project, buscar todos los items sin filtro
-    # para que BM25 + hybrid scoring encuentre matches en otros proyectos.
-    # Usamos n_results alto (1000) para cubrir toda la coleccion, compensando hash embeddings.
-    if project:
+    # Fallback multi-proyecto OPT-IN: solo si include_other_projects=True.
+    # Antes corria SIEMPRE que hubiera project, anulando el filtro where y
+    # devolviendo otros proyectos (p.ej. eleccion-db) en busquedas ajenas.
+    # n_results=1000 cubre la coleccion completa compensando hash embeddings.
+    if project and include_other_projects:
         fallback_res = query_collection(collection, query, n_results=1000, where=None)
         fallback_candidates = _load_candidates(
             collection, fallback_res.get("ids", []), fallback_res.get("metadatas", []),
