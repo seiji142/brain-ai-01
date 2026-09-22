@@ -1,6 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
+import subprocess
+import threading
+import uuid
+import json
+from datetime import datetime
+from pathlib import Path
 from ..pipelines.ingest import ingest_episode
 from ..core.retrieval import retrieve
 from ..core.utils import now_iso, new_id
@@ -67,11 +73,163 @@ def _deploy(environment: str, api_key: str, region: str) -> dict:
     }
 
 
+def _run_shell(command: str, cwd: str = None, timeout: int = 1800) -> dict:
+    """Ejecuta un comando shell y devuelve stdout/stderr."""
+    import subprocess
+    result = subprocess.run(
+        command, shell=True, capture_output=True, text=True,
+        cwd=cwd, timeout=timeout
+    )
+    return {
+        "stdout": result.stdout[:5000],
+        "stderr": result.stderr[:5000],
+        "returncode": result.returncode
+    }
+
+
 _gateway = ActionGateway(_store, executors={
     "http_request": _http_request,
     "write_file": _write_file,
     "deploy": _deploy,
+    "run_shell": _run_shell,
 })
+
+
+# --- Background Test Runner (Generico, reutilizable) ---
+
+class BackgroundTaskRunner:
+    """Ejecuta comandos en background y almacena resultados."""
+
+    def __init__(self):
+        self._tasks = {}
+        self._lock = threading.Lock()
+
+    def run(self, command: str, cwd: str = None, timeout: int = 600) -> str:
+        task_id = f"task_{uuid.uuid4().hex[:12]}"
+        with self._lock:
+            self._tasks[task_id] = {
+                "status": "running",
+                "command": command,
+                "cwd": cwd,
+                "started_at": datetime.now().isoformat(),
+                "finished_at": None,
+                "stdout": None,
+                "stderr": None,
+                "returncode": None,
+            }
+        thread = threading.Thread(target=self._execute, args=(task_id, command, cwd, timeout), daemon=True)
+        thread.start()
+        return task_id
+
+    def _execute(self, task_id: str, command: str, cwd: str, timeout: int):
+        try:
+            result = subprocess.run(
+                command, shell=True, capture_output=True, text=True,
+                cwd=cwd, timeout=timeout
+            )
+            with self._lock:
+                self._tasks[task_id].update({
+                    "status": "done",
+                    "finished_at": datetime.now().isoformat(),
+                    "stdout": result.stdout[:50000],
+                    "stderr": result.stderr[:5000],
+                    "returncode": result.returncode,
+                })
+        except subprocess.TimeoutExpired:
+            with self._lock:
+                self._tasks[task_id].update({
+                    "status": "timeout",
+                    "finished_at": datetime.now().isoformat(),
+                    "stderr": f"Timeout after {timeout}s",
+                })
+        except Exception as e:
+            with self._lock:
+                self._tasks[task_id].update({
+                    "status": "error",
+                    "finished_at": datetime.now().isoformat(),
+                    "stderr": str(e),
+                })
+
+    def status(self, task_id: str) -> dict:
+        with self._lock:
+            task = self._tasks.get(task_id)
+        if not task:
+            return {"error": "task_not_found"}
+        return {"task_id": task_id, **task}
+
+    def list_tasks(self) -> list:
+        with self._lock:
+            return [
+                {"task_id": tid, "status": t["status"], "command": t["command"][:80]}
+                for tid, t in self._tasks.items()
+            ]
+
+
+_runner = BackgroundTaskRunner()
+
+
+# --- Endpoints de Tests (Generico) ---
+
+class TestsRunReq(BaseModel):
+    command: str
+    cwd: Optional[str] = None
+    timeout: int = 600
+    session_id: str
+
+class TestsStatusReq(BaseModel):
+    task_id: str
+
+@app.post("/tests/run")
+def tests_run(req: TestsRunReq):
+    """Ejecuta un comando de test en background. Devuelve task_id."""
+    task_id = _runner.run(req.command, req.cwd, req.timeout)
+    return {"ok": True, "task_id": task_id, "status": "started"}
+
+@app.get("/tests/status/{task_id}")
+def tests_status(task_id: str):
+    """Devuelve el estado de un task de test."""
+    result = _runner.status(task_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+@app.get("/tests/list")
+def tests_list():
+    """Lista todos los tasks de test."""
+    return {"tasks": _runner.list_tasks()}
+
+
+# --- Endpoints de Comandos (verificaciones/builds, NO tests) ---
+# Alias sobre el mismo _runner: separacion semantica sin duplicar logica.
+
+
+class CommandsRunReq(BaseModel):
+    command: str
+    cwd: Optional[str] = None
+    timeout: int = 600
+    session_id: str
+
+
+@app.post("/commands/run")
+def commands_run(req: CommandsRunReq):
+    """Ejecuta un comando de verificacion/build en background. Devuelve task_id."""
+    task_id = _runner.run(req.command, req.cwd, req.timeout)
+    return {"ok": True, "task_id": task_id, "status": "started"}
+
+
+@app.get("/commands/status/{task_id}")
+def commands_status(task_id: str):
+    """Devuelve el estado de un task de comando."""
+    result = _runner.status(task_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+@app.get("/commands/list")
+def commands_list():
+    """Lista todos los tasks de comandos."""
+    return {"tasks": _runner.list_tasks()}
 
 class IngestReq(BaseModel):
     episode: dict
@@ -226,3 +384,5 @@ def execute_action(req: ExecuteRequest):
         return {"ok": True, "result": result}
     except ProvenanceError as e:
         return {"ok": False, "error_code": e.code, "message": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

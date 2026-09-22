@@ -69,7 +69,9 @@ ACTION_POLICIES: dict[str, dict] = {
         "content": LiteralPolicy(str, max_len=200000),
     },
     "run_shell": {
-        "command": EnumPolicy({"npm test", "pytest", "git status", "git diff"}),
+        "command": LiteralPolicy(str, max_len=1000),
+        "cwd": LiteralPolicy(str, max_len=500),
+        "timeout": LiteralPolicy(int, min=1, max=120),
     },
     "deploy": {
         "environment": EnumPolicy({"staging", "production"}),

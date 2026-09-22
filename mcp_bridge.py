@@ -22,11 +22,14 @@ Tools disponibles:
   - resolver_referencia: Resuelve una referencia contra fuentes autorizadas
   - describir_handle: Devuelve metadatos de un handle (sin el valor)
   - ejecutar_accion: Ejecuta una acción con efectos (requiere handle verificado)
+  - run_tests / test_status: SOLO tests (con advertencia si no parece test)
+  - run_command / command_status: verificaciones, builds y comandos de consola (NO tests)
 """
 
 import json
 import sys
 import os
+import re
 import uuid
 import subprocess
 import time
@@ -267,6 +270,96 @@ TOOLS = [
             },
             "required": ["action", "params"]
         }
+    },
+    {
+        "name": "run_tests",
+        "description": (
+            "Ejecuta un comando de TESTS en background (async). SOLO para tests. "
+            "Si el comando no parece un test, ejecuta igual pero devuelve una advertencia "
+            "sugiriendo run_command. Para builds/verificaciones usa run_command. "
+            "Devuelve un task_id para consultar con test_status."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Comando de test a ejecutar (ej: 'python run_all_tests.py', 'npm test', 'pytest tests/ -v')"
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Directorio de trabajo del proyecto (ruta absoluta)"
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout en segundos (default: 600)",
+                    "default": 600
+                }
+            },
+            "required": ["command"]
+        }
+    },
+    {
+        "name": "test_status",
+        "description": (
+            "Consulta el resultado de un task de tests ejecutado con run_tests. "
+            "Devuelve status, stdout, stderr y returncode."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "El task_id devuelto por run_tests"
+                }
+            },
+            "required": ["task_id"]
+        }
+    },
+    {
+        "name": "run_command",
+        "description": (
+            "Ejecuta un comando de verificacion/build/consola en background (async). "
+            "NO usar para tests (para eso esta run_tests). "
+            "Ejemplos: 'npm run build', 'npm run lint', 'echo ok'. "
+            "Devuelve un task_id para consultar con command_status."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Comando a ejecutar (ej: 'npm run build', 'npm run lint')"
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Directorio de trabajo del proyecto (ruta absoluta)"
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout en segundos (default: 600)",
+                    "default": 600
+                }
+            },
+            "required": ["command"]
+        }
+    },
+    {
+        "name": "command_status",
+        "description": (
+            "Consulta el resultado de un task ejecutado con run_command. "
+            "Devuelve status, stdout, stderr y returncode."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "El task_id devuelto por run_command"
+                }
+            },
+            "required": ["task_id"]
+        }
     }
 ]
 
@@ -275,8 +368,9 @@ def _api_request(endpoint, data):
     """Realiza una request HTTP a brain-ai-01. Inicia el servidor si no está corriendo."""
     if not HAS_REQUESTS:
         return {"ok": False, "error": "requests library not installed"}
+    timeout = 600 if data and data.get("action") == "run_shell" else 30
     try:
-        r = requests.post(f"{BRAIN_API}{endpoint}", json=data, timeout=30)
+        r = requests.post(f"{BRAIN_API}{endpoint}", json=data, timeout=timeout)
         return r.json()
     except requests.ConnectionError:
         # Servidor no está corriendo - intentar iniciarlo automáticamente
@@ -289,6 +383,19 @@ def _api_request(endpoint, data):
                 return {"ok": False, "error": f"Error después de iniciar servidor: {str(e)}"}
         # No se pudo iniciar el servidor
         return {"ok": False, "error": "brain-ai-01 no está disponible. Intenta de nuevo en unos segundos."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_get(endpoint):
+    """Realiza una request GET a brain-ai-01."""
+    if not HAS_REQUESTS:
+        return {"ok": False, "error": "requests library not installed"}
+    try:
+        r = requests.get(f"{BRAIN_API}{endpoint}", timeout=30)
+        return r.json()
+    except requests.ConnectionError:
+        return {"ok": False, "error": "brain-ai-01 no está disponible."}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -404,6 +511,62 @@ def handle_ejecutar_accion(args):
     return json.dumps(result, ensure_ascii=False, default=str)
 
 
+_TEST_CMD_RE = re.compile(
+    r"(pytest|vitest|jest|mocha|phpunit|run_all_tests\.py|test[\w\-]*\.py|[\w\-]*spec\.[\w]+"
+    r"|npm\s+(test|run\s+test[\w:\-]*)|yarn\s+test|pnpm\s+test|bun\s+test"
+    r"|\bgo\s+test\b|\bcargo\s+test\b)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_test(command: str) -> bool:
+    """Heuristica warn-only: True si el comando parece un test."""
+    return bool(_TEST_CMD_RE.search(command or ""))
+
+
+_TEST_WARNING = (
+    "ADVERTENCIA: esto no parece un test. Para builds/verificaciones "
+    "usa run_command (POST /commands/run)."
+)
+
+
+def handle_run_tests(args):
+    """Ejecuta un comando de TESTS en background (async). Solo advierte si no parece test."""
+    result = _api_request("/tests/run", {
+        "command": args["command"],
+        "cwd": args.get("cwd"),
+        "timeout": args.get("timeout", 600),
+        "session_id": _SESSION_ID,
+    })
+    payload = json.dumps(result, ensure_ascii=False, default=str)
+    if not _looks_like_test(args.get("command", "")):
+        return f"{_TEST_WARNING}\n{payload}"
+    return payload
+
+
+def handle_test_status(args):
+    """Consulta el resultado de un task de tests."""
+    result = _api_get(f"/tests/status/{args['task_id']}")
+    return json.dumps(result, ensure_ascii=False, default=str)
+
+
+def handle_run_command(args):
+    """Ejecuta un comando de verificacion/build en background (async)."""
+    result = _api_request("/commands/run", {
+        "command": args["command"],
+        "cwd": args.get("cwd"),
+        "timeout": args.get("timeout", 600),
+        "session_id": _SESSION_ID,
+    })
+    return json.dumps(result, ensure_ascii=False, default=str)
+
+
+def handle_command_status(args):
+    """Consulta el resultado de un task de comando."""
+    result = _api_get(f"/commands/status/{args['task_id']}")
+    return json.dumps(result, ensure_ascii=False, default=str)
+
+
 TOOL_HANDLERS = {
     "memory_search": handle_memory_search,
     "memory_save": handle_memory_save,
@@ -411,6 +574,10 @@ TOOL_HANDLERS = {
     "resolver_referencia": handle_resolver_referencia,
     "describir_handle": handle_describir_handle,
     "ejecutar_accion": handle_ejecutar_accion,
+    "run_tests": handle_run_tests,
+    "test_status": handle_test_status,
+    "run_command": handle_run_command,
+    "command_status": handle_command_status,
 }
 
 
