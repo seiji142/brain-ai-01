@@ -48,7 +48,9 @@ try:
 except ImportError:
     HAS_PROVENANCE = False
 
-BRAIN_API = os.getenv("BRAIN_AI_URL", "http://localhost:8000")
+# 127.0.0.1 explicito: uvicorn solo escucha IPv4 y "localhost" puede
+# resolver primero a ::1 (IPv6) → SYN_SENT colgando (tarea 13.2)
+BRAIN_API = os.getenv("BRAIN_AI_URL", "http://127.0.0.1:8000")
 
 # Session ID inyectado por el bridge. El modelo NUNCA debe controlar esto.
 _SESSION_ID = f"sess_{uuid.uuid4().hex[:12]}"
@@ -172,7 +174,7 @@ TOOLS = [
                 "include_other_projects": {
                     "type": "boolean",
                     "description": "Si es true y se pasa project, incluye tambien resultados de OTROS proyectos (busqueda cross-project opt-in). Default: false (aislamiento estricto por proyecto).",
-                    "default": false
+                    "default": False
                 }
             },
             "required": ["query"]

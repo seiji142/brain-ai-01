@@ -23,7 +23,7 @@ import requests, re
 from datetime import datetime
 from pathlib import Path
 
-API = "http://localhost:8000"
+API = "http://127.0.0.1:8000"
 
 def _find_brain_dir() -> Path:
     p = Path(__file__).resolve().parent

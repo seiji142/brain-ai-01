@@ -105,6 +105,21 @@ brain-ai-01 se inicia automáticamente cuando opencode hace la primera petición
 
 ## Troubleshooting
 
+### El handshake MCP hace timeout ("Timeout esperando respuesta a request 1")
+El bridge (`mcp_bridge.py`) murió al arrancar; no es un problema de red.
+
+```powershell
+# Ver el error real del bridge (debe mostrar el traceback, no timeout)
+python mcp_bridge.py < nul
+
+# Compilar para detectar NameError/syntax antes de correr tests
+python -m py_compile mcp_bridge.py
+```
+
+Causa histórica (23/09/2026, tarea 13): literal JSON `false` en vez de
+`False` en el schema de `memory_search` → `NameError` → exit code 1 →
+timeout silencioso de 30s en el cliente (ver CHANGELOG 2026-09-23).
+
 ### El servidor no inicia automáticamente
 ```powershell
 # Ver logs de auto-start
@@ -116,8 +131,8 @@ Get-Content logs/uvicorn.log -Tail 50
 
 ### El servidor no responde
 ```powershell
-# Verificar health
-Invoke-RestMethod http://localhost:8000/health
+# Verificar health (IPv4 explicito: uvicorn solo escucha 127.0.0.1)
+Invoke-RestMethod http://127.0.0.1:8000/health
 
 # Reiniciar manualmente
 .\start_server.ps1

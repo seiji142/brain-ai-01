@@ -10,6 +10,54 @@ Todos los cambios notables en brain-ai-01.
 ### Changed
 - Actualizar documentación completa
 
+## [2026-09-23]
+
+### Fixed
+- **Bridge muerto por `NameError` en `mcp_bridge.py` (tarea 13)**
+
+  **Problema:** el handshake MCP (`initialize`) fallaba con timeout de 30s
+  en los tests API (`personalizar-comportamiento-01`). El bridge moría con
+  exit code 1 al arrancar:
+
+  ```
+  mcp_bridge.py, line 175
+      "default": false
+  NameError: name 'false' is not defined
+  ```
+
+  **Causa raíz:** el commit `c87e984` (tarea 5, 21/09) agregó el literal
+  JSON `false` en el schema de `memory_search.include_other_projects` en
+  vez del booleano de Python `False`. El traceback era invisible porque
+  el cliente (`tests/lib/mcp_client.py`) lanzaba el bridge con
+  `stderr=subprocess.DEVNULL` y solo esperaba la respuesta, sin verificar
+  si el proceso seguía vivo → timeout silencioso de 30s.
+
+  **Nota:** había evidencia de `SYN_SENT [::1]:8000` en netstat
+  (`localhost` resuelve primero a `::1` / IPv6 y uvicorn solo escucha
+  `127.0.0.1`), pero era ruido secundario: la falla real ocurría antes
+  de cualquier conexión HTTP, en el import del módulo.
+
+  **Cambio:**
+  - `mcp_bridge.py:175` — `false` → `False` (el bug).
+  - `mcp_bridge.py` — `BRAIN_API` por defecto ahora es
+    `http://127.0.0.1:8000` (IPv4 explícito, elimina el intento a `::1`).
+  - `clients/memoria.py` — `API` ahora `http://127.0.0.1:8000`.
+
+### Tested
+- Post-fix: `initialize` 0.67s, `tools/list` 10 tools, `memory_search`
+  real OK (antes: `MCPError: Timeout esperando respuesta a request 1`
+  a los 30.43s).
+- B3 re-run `--api qwen/qwen3.8-27b`: PASS 31.1s, `mcp_available=True`,
+  `memory_used=True`, `arguments.project="test-ai-config"`.
+- Documentación: sección TAREA 13 en
+  `personalizar-comportamiento-01/docs/tests/sesion_20260921.md`.
+
+### Nota (cliente de tests, repo personalizar-comportamiento-01)
+- `mcp_client.py` ahora es fail-fast: si el bridge muere durante
+  `_wait_response`, lanza `MCPError` con exit code + tail de stderr en
+  vez de esperar el timeout completo. Cualquier crash futuro del bridge
+  se diagnostica en ~1s con el error real.
+
 ## [2026-09-21]
 
 ### Fixed
