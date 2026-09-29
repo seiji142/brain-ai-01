@@ -225,8 +225,35 @@ gitignorados y no viajan al push.
 
 ## 10. Deudas y próximos pasos
 
-- Refactor lazy de `config.py` (causa de fondo, §3.1 y Capa 1).
-- Backup automático + test canario (Capas 1–2).
+- Refactor lazy de `config.py` (causa de fondo, §3.1 y Capa 1) —
+  **diferido por decisión explícita, ver abajo**.
+- Backup automático + test canario (Capas 1–2) — **hecho 29/09/2026**:
+  `tests/test_aislamiento_seguro.py`, guardia abortiva en
+  `tests/conftest.py`, `.ai/checklist_pre_pytest.md`,
+  `scripts/backup_chroma.py` + Tarea Programada diaria
+  `brain-ai-01-chroma-backup` (destino fuera del árbol git,
+  retención 7). Commits `4417652` y `b4186a8` en `origin/main-clean`.
 - `summaries/` real aceptado como perdido salvo que aparezca copia.
 - Decidir publicación `main-clean` → `main` según roadmap (16P ya
   cerrado y verificado 19/19).
+
+### Por qué el refactor lazy de `config.py` quedó diferido (29/09/2026)
+
+Decisión de la sesión de prevención: no hacerlo ahora.
+
+1. El riesgo ya está cubierto por 3 capas (test canario, guardia
+   abortiva en `conftest.py`, backup automático + checklist):
+   beneficio marginal bajo.
+2. No es un cambio de un archivo: ~12 archivos hacen
+   `from config import ...` (`core/memory.py`, `core/vectorstore.py`,
+   `core/retrieval.py`, `pipelines/ingest.py`,
+   `pipelines/consolidate.py`, `pipelines/factcheck.py`,
+   `pipelines/export.py`, más 4 tests) y congelan los valores al
+   importar. Hay que reescribir cada uso a `get_*()`, adaptar
+   `conftest.py` + canario y re-verificar la suite completa.
+3. Tocarlo ahora arriesga romper la suite 69/69 verde y pusheada.
+
+Futuro: convertir las constantes de `config.py:21-50` en funciones
+`get_*()` con resolución por llamada (leer entorno cada vez, sin
+congelar paths al importar). Modelo a seguir: el import lazy ya
+existente en `mcp_server.py:298`.
