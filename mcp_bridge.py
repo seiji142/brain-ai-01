@@ -167,9 +167,9 @@ TOOLS = [
                 },
                 "collection": {
                     "type": "string",
-                    "description": "Colección a buscar: 'semantic' (conocimiento consolidado) o 'episodic' (eventos crudos)",
-                    "enum": ["semantic", "episodic"],
-                    "default": "semantic"
+                    "description": "Colección a buscar: 'both' (episódica + semántica, por defecto), 'semantic' (conocimiento consolidado) o 'episodic' (eventos crudos)",
+                    "enum": ["semantic", "episodic", "both"],
+                    "default": "both"
                 },
                 "include_other_projects": {
                     "type": "boolean",
@@ -433,7 +433,7 @@ def handle_memory_search(args):
         "query": args["query"],
         "top_k": args.get("top_k", 5),
         "project": args.get("project"),
-        "collection": args.get("collection", "semantic"),
+        "collection": args.get("collection", "both"),
         "include_other_projects": bool(args.get("include_other_projects", False))
     })
     

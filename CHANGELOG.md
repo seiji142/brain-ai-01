@@ -4,6 +4,15 @@ Todos los cambios notables en brain-ai-01.
 
 ## [Unreleased]
 
+### Changed
+- **C1 (16M, 29/09/2026): `memory_search` busca en ambas colecciones por
+  defecto.** `retrieval.retrieve()` acepta `collection="both"` (merge por
+  score, misma semántica que `clients/memoria.buscar`; `top_k*2` por
+  colección); defaults en `mcp_bridge.py` (schema + handler) y
+  `mcp_server.py` pasan a `"both"`. `semantic`/`episodic` explícitos
+  intactos; valor desconocido sigue cayendo a `semantic`. Tests:
+  `tests/test_retrieval_both_collections.py` 5/5, suite 74/74.
+
 ### Fixed
 - **Incidente 29/09/2026: suite pytest borraba `memory/` y `logs/` reales.**
   Causa: `ai_architect/core/config.py` fija `ROOT = Path.cwd()` y

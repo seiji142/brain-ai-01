@@ -241,7 +241,7 @@ class RetrieveReq(BaseModel):
     tags: Optional[List[str]] = None
     date_from: Optional[str] = None
     date_to: Optional[str] = None
-    collection: str = "semantic"
+    collection: str = "both"
     include_other_projects: bool = False
 
 class ConsolidateReq(BaseModel):

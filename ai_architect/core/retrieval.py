@@ -46,7 +46,7 @@ def _load_candidates(collection: str, ids: List[str], metas: List[Dict], docs: L
                 if not any(t in meta_tags for t in tags):
                     continue
         text = item.get("statement") or item.get("summary") or item.get("title") or doc
-        candidates.append((item, dist, text, ts, meta))
+        candidates.append((item, dist, text, ts, meta, collection))
     return candidates
 
 
@@ -77,35 +77,49 @@ def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Op
     """
     trace_id = new_id("tr_")
     where = _build_where(project, tags, date_from, date_to)
-    if collection not in ("semantic", "episodic"):
+    # C1 (16M): collection="both" busca en episodic + semantic y mergea por
+    # score (misma semantica que clients/memoria.buscar). Cualquier otro
+    # valor desconocido sigue cayendo a "semantic" como antes.
+    if collection == "both":
+        collections = ("episodic", "semantic")
+    elif collection in ("semantic", "episodic"):
+        collections = (collection,)
+    else:
+        collections = ("semantic",)
         collection = "semantic"
-    res = query_collection(collection, query, n_results=top_k*5, where=where)
 
-    candidates: List[Dict[str, Any]] = _load_candidates(
-        collection, res.get("ids", []), res.get("metadatas", []),
-        res.get("documents", []), res.get("distances", []),
-        tags, date_from, date_to
-    )
-
-    # Fallback multi-proyecto OPT-IN: solo si include_other_projects=True.
-    # Antes corria SIEMPRE que hubiera project, anulando el filtro where y
-    # devolviendo otros proyectos (p.ej. eleccion-db) en busquedas ajenas.
-    # n_results=1000 cubre la coleccion completa compensando hash embeddings.
-    if project and include_other_projects:
-        fallback_res = query_collection(collection, query, n_results=1000, where=None)
-        fallback_candidates = _load_candidates(
-            collection, fallback_res.get("ids", []), fallback_res.get("metadatas", []),
-            fallback_res.get("documents", []), fallback_res.get("distances", []),
+    candidates: List[Dict[str, Any]] = []
+    for col in collections:
+        # En modo both se piden top_k*2 por coleccion (igual que
+        # memoria.buscar); en modo simple se conserva top_k*5 exacto.
+        n_res = top_k * 2 if len(collections) > 1 else top_k * 5
+        res = query_collection(col, query, n_results=n_res, where=where)
+        candidates += _load_candidates(
+            col, res.get("ids", []), res.get("metadatas", []),
+            res.get("documents", []), res.get("distances", []),
             tags, date_from, date_to
         )
-        candidates = _deduplicate(candidates + fallback_candidates)
+
+        # Fallback multi-proyecto OPT-IN: solo si include_other_projects=True.
+        # Antes corria SIEMPRE que hubiera project, anulando el filtro where y
+        # devolviendo otros proyectos (p.ej. eleccion-db) en busquedas ajenas.
+        # n_results=1000 cubre la coleccion completa compensando hash embeddings.
+        if project and include_other_projects:
+            fallback_res = query_collection(col, query, n_results=1000, where=None)
+            fallback_candidates = _load_candidates(
+                col, fallback_res.get("ids", []), fallback_res.get("metadatas", []),
+                fallback_res.get("documents", []), fallback_res.get("distances", []),
+                tags, date_from, date_to
+            )
+            candidates = _deduplicate(candidates + fallback_candidates)
+    candidates = _deduplicate(candidates)
 
     # BM25 scoring sobre todos los candidatos
     texts = [c[2] for c in candidates]
     bm25_scores = compute_bm25_scores(query, texts) if texts else []
 
     results: List[Dict[str, Any]] = []
-    for idx, (item, dist, text, ts, meta) in enumerate(candidates):
+    for idx, (item, dist, text, ts, meta, col) in enumerate(candidates):
         bm25 = bm25_scores[idx] if bm25_scores else 0.0
         score = hybrid_score(item, dist, bm25)
         evidence_list = item.get("evidence", [])
@@ -113,7 +127,7 @@ def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Op
         source_type = item.get("source_type", meta.get("source_type", ""))
         results.append({
             "id": item.get("id", item.get("id")),
-            "type": item.get("type", "episode" if collection=="episodic" else "semantic"),
+            "type": item.get("type", "episode" if col == "episodic" else "semantic"),
             "text": text,
             "project": item.get("project", meta.get("project","")),
             "timestamp": ts,
@@ -121,7 +135,7 @@ def retrieve(query: str, top_k: int = 5, project: Optional[str] = None, tags: Op
             "source_type": source_type,
             "file_path": file_path,
             "evidence": evidence_list or [{"type":"episode", "id": eid} for eid in item.get("evidence_source_ids", [])],
-            "collection": collection,
+            "collection": col,
         })
 
     # Ordenar por score descendente y limitar a top_k
