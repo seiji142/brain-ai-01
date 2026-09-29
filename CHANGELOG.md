@@ -10,6 +10,33 @@ Todos los cambios notables en brain-ai-01.
 ### Changed
 - Actualizar documentación completa
 
+## [2026-09-28]
+
+### Fixed
+- **16L: `memory_save` ya no acepta guardar sin `project`**
+
+  **Problema:** el servidor ya validaba (`ai_architect/pipelines/ingest.py:9`,
+  `REQUIRED` → HTTP 400), pero el bridge no, y sus dos modos de fallo daban
+  mensajes inútiles al modelo:
+
+  | Qué mandaba el modelo | Qué veía |
+  |---|---|
+  | Call sin la key `project` | `Error ejecutando memory_save: 'project'` (`KeyError` crudo) |
+  | `project: ""` o `null` | `Error al guardar: Unknown error` (el motivo real quedaba enterrado en `detail`) |
+
+  **Cambio:** `handle_memory_save` valida `project` y `decision` con `.strip()`
+  **antes** del request (0 HTTP en el error previsible) y desenvuelve `detail`
+  para que el error real del servidor llegue al modelo. `clients/memoria.guardar`
+  hace lo mismo con `ValueError` temprano.
+
+  **No se tocó el `TOOLS` (schema publicado)**: el `inputSchema` ya declaraba
+  `required: ["project", "decision"]`, así que el cambio **no altera la request
+  de D1-D3 ni obliga a re-correr la suite**.
+
+  **Tests:** `tests/test_mcp_bridge_validacion.py` — 6 casos sin HTTP
+  (proyecto ausente/vacio/solo espacios, decision vacia, caso valido, error
+  400 con `detail`). Verificado: 6/6 pass.
+
 ## [2026-09-23]
 
 ### Fixed

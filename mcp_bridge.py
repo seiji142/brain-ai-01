@@ -455,25 +455,41 @@ def handle_memory_search(args):
 
 def handle_memory_save(args):
     """Guarda un episodio en memoria."""
+    project = (args.get("project") or "").strip()
+    decision = (args.get("decision") or "").strip()
+
+    # Validacion previa al request: sin project el episodio no es recuperable,
+    # y devolver el KeyError crudo o "Unknown error" deja al modelo sin forma
+    # de corregirse (tarea 16L). El servidor ya valida igual en ingest.py.
+    if not project:
+        return ("Error al guardar: falta 'project'. Es obligatorio: cada episodio se guarda "
+                "bajo un proyecto y sin el no se puede recuperar. "
+                "Ej.: project='personalizar-comportamiento-01'")
+    if not decision:
+        return "Error al guardar: falta 'decision' (texto de la decisión o lección aprendida)."
+
     result = _api_request("/ingest", {
         "episode": {
-            "project": args["project"],
+            "project": project,
             "source_type": "chat",
             "author": "modelo",
-            "title": args["decision"][:50],
-            "summary": args["decision"],
+            "title": decision[:50],
+            "summary": decision,
             "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "decisions": [{"text": args["decision"]}],
+            "decisions": [{"text": decision}],
             "evidence": [{"type": "doc", "url_or_path": "", "excerpt": args.get("evidence", "")}] if args.get("evidence") else [],
             "tags": args.get("tags", [])
         }
     })
-    
+
     if result.get("ok"):
         episode_id = result.get("episode_id", "unknown")
         return f"Episodio guardado exitosamente. ID: {episode_id}"
-    
-    return f"Error al guardar: {result.get('error', 'Unknown error')}"
+
+    # El servidor envuelve el error en "detail" cuando responde 400; sin esto
+    # el modelo ve "Unknown error" y no puede corregir la llamada (16L).
+    detail = result.get("error") or (result.get("detail") or {}).get("error") or result.get("detail")
+    return f"Error al guardar: {detail or 'respuesta sin detalle del servidor'}"
 
 
 def handle_memory_consolidate(args):

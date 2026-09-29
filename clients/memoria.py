@@ -97,6 +97,15 @@ def guardar_contexto(nombre_base: str, contexto: str, proyecto: str = "brain-ai-
 
 
 def guardar(proyecto, decision, evidencia="", source_type="chat", author="yo", tags=None):
+    # Validacion previa al request (16L): sin project el episodio no es
+    # recuperable, y un None/"" hoy se iba al 400 sin explicacion.
+    if not (proyecto or "").strip():
+        raise ValueError(
+            "falta 'proyecto': es obligatorio, cada episodio se guarda bajo un proyecto "
+            "y sin el no se puede recuperar. Ej.: proyecto='personalizar-comportamiento-01'"
+        )
+    if not (decision or "").strip():
+        raise ValueError("falta 'decision': texto de la decisión o lección aprendida.")
     r = requests.post(f"{API}/ingest", json={"episode": {
         "project": proyecto,
         "source_type": source_type,
