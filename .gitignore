@@ -29,3 +29,7 @@ Thumbs.db
 # Scratch / temporal
 test.txt
 src/doc/IMP REFERENCIA/
+
+# Backups de Chroma con sqlite fuera de git (solo en disco).
+# Incidente 29/09/2026: decenas de MB, nunca commitear.
+docs/backup_*/chroma*.sqlite3

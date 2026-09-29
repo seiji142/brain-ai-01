@@ -23,6 +23,26 @@ os.environ["CHROMA_PERSIST_DIR"] = str(_GLOBAL_TMP / "chroma")
 import pytest  # noqa: E402
 
 
+def _assert_inside_tmp(dirs: dict) -> None:
+  """Guardia abortiva (incidente 29/09/2026, Capa 1).
+
+  Si algun *_DIR apunta fuera del tmp del sistema (p.ej. a produccion
+  porque alguien rompio este conftest), aborta TODA la corrida con
+  pytest.exit en vez de dejar que un rmtree borre datos reales.
+  """
+  system_tmp = Path(tempfile.gettempdir()).resolve()
+  repo_root = Path.cwd().resolve()
+  for name, p in dirs.items():
+    rp = Path(p).resolve()
+    if rp == repo_root or repo_root in rp.parents or rp != system_tmp and system_tmp not in rp.parents:
+      pytest.exit(
+        f"GUARDIA: {name}={rp} fuera de tmp ({system_tmp}). "
+        f"Corrida abortada para proteger memory//logs//Chroma reales. "
+        f"Ver docs/INCIDENTE_20260929_MEMORIA.md.",
+        returncode=1,
+      )
+
+
 @pytest.fixture(autouse=True)
 def _isolate_brain_ai_dirs(tmp_path, monkeypatch):
   """Redirige dirs de produccion a tmp_path. Autouse en todo tests/."""
@@ -77,7 +97,23 @@ def _isolate_brain_ai_dirs(tmp_path, monkeypatch):
   monkeypatch.setattr(vs, "CHROMA_DIR", chroma_dir)
   monkeypatch.setattr(vs, "_client", None)
 
-  # Guardia: ningun test debe apuntar a la memoria real
+  # Guardia: ningun test debe apuntar a la memoria real.
+  # Aborta toda la corrida si algo quedo fuera de tmp.
+  _assert_inside_tmp({
+    "cfg.MEMORY_ROOT": mem_root,
+    "cfg.LOG_DIR": log_dir,
+    "cfg.CHROMA_DIR": chroma_dir,
+    "cfg.EPISODIC_DIR": episodic,
+    "cfg.SEMANTIC_DIR": semantic,
+    "cfg.WORKING_DIR": working,
+    "cfg.SUMMARIES_DIR": summaries,
+    "cfg.REFLECTIONS_DIR": reflections,
+    "cfg.INDEXES_DIR": indexes,
+    "cfg.TRACES_DIR": traces,
+    "cfg.TOOLCALLS_DIR": toolcalls,
+    "cfg.EVALS_DIR": evals,
+    "cfg.FAILS_DIR": fails,
+  })
   yield
 
   monkeypatch.setattr(vs, "_client", None)
