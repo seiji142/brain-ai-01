@@ -5,7 +5,12 @@ from typing import Any, Dict
 ISO = "%Y-%m-%dT%H:%M:%SZ"
 
 PII_PATTERNS = [
-    # re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+    # Email = PII real, lo piden tests/test_memory.py (re-activado 16P,
+    # estaba comentado desde 803d941/2026-05-15 y dejo 2 tests rojos).
+    re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+    # Estos dos quedan DESACTIVADOS a proposito: son ruidosos (se comian
+    # fechas, ids y telefonos legitimos del texto). No reactivar sin un test
+    # que justifique que no rompen contenido legitimo.
     # re.compile(r"\b(?:\+?\d[\d\s\-]{7,}\d)\b"),
     # re.compile(r"\b\d{6,}\b"),
     re.compile(r"\bsk-[A-Za-z0-9]{16,}\b"),

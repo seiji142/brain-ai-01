@@ -20,11 +20,10 @@ from ai_architect.core.config import EPISODIC_DIR, SEMANTIC_DIR, SUMMARIES_DIR, 
 from ai_architect.core.config import TRACES_DIR, EVALS_DIR, FAILS_DIR, TOOLCALLS_DIR
 
 def _clean_data():
-    for sub in [EPISODIC_DIR, SEMANTIC_DIR, SUMMARIES_DIR, REFLECTIONS_DIR,
-                TRACES_DIR, EVALS_DIR, WORKING_DIR, INDEXES_DIR, FAILS_DIR, TOOLCALLS_DIR]:
-        if sub.exists():
-            shutil.rmtree(sub)
-        sub.mkdir(parents=True, exist_ok=True)
+    # NEUTRALIZADO (incidente 29/09/2026): el aislamiento lo hace
+    # tests/conftest.py redirigiendo *_DIR a tmp_path. Esta funcion
+    # queda como no-op para no borrar produccion.
+    return None
 
 def make_ts(month, day=10):
     return f"2026-{month:02d}-{day:02d}T14:00:00Z"
@@ -150,9 +149,13 @@ class TestCalidadContradicciones:
             ingest_episode(ep)
         consolidate_project("eleccion-db")
         sems = list_semantic(project="eleccion-db", type_="decision")
-        postgres_items = [s for s in sems if "postgres" in s["statement"].lower()]
-        assert len(postgres_items) >= 1
-        pg = postgres_items[0]
+        # Filtrar por el texto exacto de la decision: "postgres" tambien
+        # aparece en el statement del episodio de MongoDB.
+        pg_items = [s for s in sems
+                    if "usar postgresql como base de datos principal"
+                    in s["statement"].lower()]
+        assert len(pg_items) == 1, f"Esperaba 1 item fusionado, hay {len(pg_items)}"
+        pg = pg_items[0]
         assert pg["confidence"] >= 0.7, f"Confidence bajo: {pg['confidence']}"
         assert len(pg.get("evidence_source_ids", [])) >= 2, "Poca evidencia para decision respaldada"
 

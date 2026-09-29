@@ -4,6 +4,32 @@ Todos los cambios notables en brain-ai-01.
 
 ## [Unreleased]
 
+### Fixed
+- **Incidente 29/09/2026: suite pytest borraba `memory/` y `logs/` reales.**
+  Causa: `ai_architect/core/config.py` fija `ROOT = Path.cwd()` y
+  `MEMORY_ROOT/LOG_DIR/CHROMA_DIR` al importar, y 4 archivos de test
+  (`test_evolucion_arquitectonica`, `test_calidad_contradicciones`,
+  `test_patrones_debugging`, `test_retrieval_strict_project`) hacian
+  `shutil.rmtree` sobre esos paths via fixture `autouse`. El fixture de
+  `test_memory.py` (env `MEMORY_ROOT/LOG_DIR/CHROMA_PERSIST_DIR/APP_ENV`)
+  era inefectivo por inicializacion en el import. No habia `conftest.py`,
+  `pytest.ini` ni `pyproject.toml`.
+  Recuperacion: 375 episodios + 214 semanticos reconstruidos desde
+  `.ai_memory/chroma` (unica copia intacta) con
+  `scripts/recover_from_chroma.py`, marcados `_recovered_from_chroma`.
+  Perdida permanente: `author`, `evidence[]`, `decisions[].owner`,
+  estructura title/summary/decisions/actions/risks,
+  `evidence_source_ids`, `contradictions`, historial `logs/traces/*.jsonl`.
+  Backup previo en `docs/backup_20260929_003809_chroma/`.
+  Aislamiento: nuevo `tests/conftest.py` (autouse, redirige todos los
+  `*_DIR` a `tmp_path`, resetea `vectorstore._client`); `_clean_data()`
+  de los 4 archivos neutralizado a no-op. Purga de 22 + 305 fixtures
+  de Chroma con `scripts/purge_test_fixtures.py` (tras backup).
+  Nota: `test_patrones_debugging.py::test_score_recency_prioriza_reciente`
+  (umbral absoluto `score > 0.6`) falla con indice limpio de 4 docs;
+  antes pasaba solo por contaminacion del indice real. Test fragil
+  pendiente de ajuste, no relacionado con 16P.
+
 ### Added
 - Mejoras propuestas (Fase 8): retry, revoke_all, cleanup, timeout configurable
 

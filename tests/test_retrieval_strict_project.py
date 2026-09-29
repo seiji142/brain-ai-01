@@ -15,11 +15,10 @@ from ai_architect.core.config import (EPISODIC_DIR, SEMANTIC_DIR, SUMMARIES_DIR,
 
 
 def _clean_data():
-    for sub in [EPISODIC_DIR, SEMANTIC_DIR, SUMMARIES_DIR, REFLECTIONS_DIR,
-                TRACES_DIR, EVALS_DIR, WORKING_DIR, INDEXES_DIR, FAILS_DIR, TOOLCALLS_DIR]:
-        if sub.exists():
-            shutil.rmtree(sub)
-        sub.mkdir(parents=True, exist_ok=True)
+    # NEUTRALIZADO (incidente 29/09/2026): el aislamiento lo hace
+    # tests/conftest.py redirigiendo *_DIR a tmp_path. Esta funcion
+    # queda como no-op para no borrar produccion.
+    return None
 
 
 def make_ts(month, day=10):

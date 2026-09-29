@@ -1,0 +1,23 @@
+{
+  "episodic": {
+    "total": 397,
+    "real": 375,
+    "fixtures_skipped": 22,
+    "written": 0,
+    "already_existed": 0,
+    "needs_review_empty_project": [
+      "ep_fc89da0e551c4fcca4781b748983964b"
+    ]
+  },
+  "semantic": {
+    "total": 519,
+    "real": 214,
+    "fixtures_skipped": 305,
+    "written": 0,
+    "already_existed": 0,
+    "needs_review_empty_project": [
+      "sem_6ab334f39b30410da25d9dc17714eb42"
+    ]
+  },
+  "write": false
+}

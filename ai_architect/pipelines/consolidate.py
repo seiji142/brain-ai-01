@@ -17,6 +17,30 @@ def _build_statement(ep: dict) -> str:
         return dtexts
     return summary
 
+def _norm(text: str) -> str:
+    return " ".join((text or "").lower().split())
+
+
+def _decision_texts(ep: dict) -> list:
+    return [_norm(d.get("text", "")) for d in ep.get("decisions", []) if d.get("text")]
+
+
+def _is_dup(existing_statement: str, ep: dict) -> bool:
+    """Decide si un episodio se fusiona en un item semantico existente.
+
+    Dos condiciones (tarea 16P):
+      1. statement identico (comportamiento original, normalizado);
+      2. todas las decisiones del episodio ya estan reflejadas en el
+         statement existente -> episodios con la MISMA decision pero
+         resumen distinto acumulan evidencia en un solo item.
+    """
+    stmt = _norm(existing_statement)
+    if stmt == _norm(_build_statement(ep)):
+        return True
+    dtexts = _decision_texts(ep)
+    return bool(dtexts) and all(dtext in stmt for dtext in dtexts)
+
+
 def _build_embedding_text(ep: dict) -> str:
     parts = []
     if ep.get("title"):
@@ -51,9 +75,8 @@ def consolidate_project(project: str | None = None) -> Dict[str, Any]:
             continue
         sems = list_semantic(project=ep.get("project"), type_="decision")
         dup = False
-        candidate_text = _build_statement(ep).lower()
         for s in sems:
-            if s.get("statement","").lower() == candidate_text:
+            if _is_dup(s.get("statement", ""), ep):
                 dup = True
                 ev = set(s.get("evidence_source_ids", []))
                 ev.add(ep["id"])

@@ -19,12 +19,10 @@ from ai_architect.core.config import EPISODIC_DIR, SEMANTIC_DIR, SUMMARIES_DIR, 
 from ai_architect.core.config import TRACES_DIR, EVALS_DIR, FAILS_DIR, TOOLCALLS_DIR
 
 def _clean_data():
-    # Clean JSON/L data dirs only (ChromaDB files are locked between tests)
-    for sub in [EPISODIC_DIR, SEMANTIC_DIR, SUMMARIES_DIR, REFLECTIONS_DIR,
-                TRACES_DIR, EVALS_DIR, WORKING_DIR, INDEXES_DIR]:
-        if sub.exists():
-            shutil.rmtree(sub)
-        sub.mkdir(parents=True, exist_ok=True)
+    # NEUTRALIZADO (incidente 29/09/2026): el aislamiento lo hace
+    # tests/conftest.py redirigiendo *_DIR a tmp_path. Esta funcion
+    # queda como no-op para no borrar produccion.
+    return None
 
 def make_ts(month, day=15, hour=10):
     return f"2026-{month:02d}-{day:02d}T{hour:02d}:00:00Z"

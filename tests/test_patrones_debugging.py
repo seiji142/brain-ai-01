@@ -19,11 +19,10 @@ from ai_architect.core.config import EPISODIC_DIR, SEMANTIC_DIR, SUMMARIES_DIR, 
 from ai_architect.core.config import TRACES_DIR, EVALS_DIR, FAILS_DIR, TOOLCALLS_DIR
 
 def _clean_data():
-    for sub in [EPISODIC_DIR, SEMANTIC_DIR, SUMMARIES_DIR, REFLECTIONS_DIR,
-                TRACES_DIR, EVALS_DIR, WORKING_DIR, INDEXES_DIR, FAILS_DIR, TOOLCALLS_DIR]:
-        if sub.exists():
-            shutil.rmtree(sub)
-        sub.mkdir(parents=True, exist_ok=True)
+    # NEUTRALIZADO (incidente 29/09/2026): el aislamiento lo hace
+    # tests/conftest.py redirigiendo *_DIR a tmp_path. Esta funcion
+    # queda como no-op para no borrar produccion.
+    return None
 
 def make_ts(month, day=10):
     return f"2026-{month:02d}-{day:02d}T14:00:00Z"
@@ -140,14 +139,24 @@ class TestPatronesDebugging:
             assert len(s.get("evidence_source_ids", [])) >= 1, f"Sin evidencia: {s['id']}"
 
     def test_score_recency_prioriza_reciente(self):
-        """Items mas recientes tienen mejor score por recencia"""
+        """El item mas reciente y relevante (Kafka, mes 4) rankea primero.
+
+        Nota (incidente 29/09/2026): la version anterior afirmaba un umbral
+        absoluto (score > 0.6) con una query ("solucion problemas conexion")
+        que no calza con el doc Kafka (tokens "desconecta" != "conexion").
+        Solo pasaba por contaminacion del indice real o en forma vacua
+        (sin resultados Kafka). Con indice aislado y limpio se usa una
+        query discriminativa y asercion relativa determinista.
+        """
         for ep in episodios:
             ingest_episode(ep)
         for proj in ["proj-alpha", "proj-beta", "proj-gamma", "proj-delta"]:
             consolidate_project(proj)
-        res = retrieve(query="solucion problemas conexion", top_k=4, collection="semantic")
-        kafka_results = [r for r in res["results"] if "kafka" in r["text"].lower()]
-        assert any(r["score"] > 0.6 for r in kafka_results) if kafka_results else True
+        res = retrieve(query="kafka reconnect backoff", top_k=4, collection="semantic")
+        assert res["results"], "Sin resultados"
+        top = res["results"][0]
+        assert "kafka" in top["text"].lower(), f"Top inesperado: {top}"
+        assert top["project"] == "proj-delta"
 
     def test_evaluacion_mide_calidad(self):
         """La evaluacion genera metricas de calidad"""

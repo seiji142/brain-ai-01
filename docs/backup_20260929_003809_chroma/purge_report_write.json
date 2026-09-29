@@ -1,0 +1,33 @@
+{
+  "write": true,
+  "episodic": {
+    "total": 397,
+    "purge_targets": 22,
+    "sample": [
+      "ep_13b7a34683a64d56ae31f8fb4bb6b6bb",
+      "ep_1cea788c867e4ba188a02224edff2360",
+      "ep_2df18e83902d49f4830d0db6609e7eca",
+      "ep_46d844e6af894639b09f7b124429ffd2",
+      "ep_arq_001",
+      "ep_arq_002",
+      "ep_arq_003",
+      "ep_arq_004"
+    ],
+    "after": 375
+  },
+  "semantic": {
+    "total": 519,
+    "purge_targets": 305,
+    "sample": [
+      "sem_002044df5b4f4e75bb81df939fe5b95c",
+      "sem_01bf9d98ddf64acf862b13bb454e16fd",
+      "sem_022f78812d224028835a035fef2bc492",
+      "sem_023880c6bcc94149bba7b4ccb8c343c2",
+      "sem_027e86e6bc8a4671b4505c67d470e79c",
+      "sem_028013ff75c4406b8af903229880a0cf",
+      "sem_035671f8d0414d8fa3476d9001323227",
+      "sem_0365a218f90e41fdbaa8b08010d78863"
+    ],
+    "after": 214
+  }
+}
